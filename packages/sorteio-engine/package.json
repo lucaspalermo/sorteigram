@@ -1,0 +1,11 @@
+{
+  "name": "@repo/sorteio-engine",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "devDependencies": {
+    "@repo/config-ts": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

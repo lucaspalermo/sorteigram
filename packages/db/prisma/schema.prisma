@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth.js Models ──────────────────────────────────────────
+
+model User {
+  id                  String    @id @default(cuid())
+  name                String?
+  email               String    @unique
+  emailVerified       DateTime?
+  image               String?
+  accounts            Account[]
+  sessions            Session[]
+  plano               Plano     @default(FREE)
+  asaasCustomerId     String?
+  asaasSubscriptionId String?
+  sorteios            Sorteio[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  // Instagram-specific
+  igUserId          String?
+  igUsername         String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Planos ──────────────────────────────────────────────────
+
+enum Plano {
+  FREE
+  CREATOR
+  BUSINESS
+  AGENCY
+}
+
+// ─── Sorteio Models ──────────────────────────────────────────
+
+model Sorteio {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  titulo         String
+  descricao      String?
+  status         StatusSorteio @default(RASCUNHO)
+  posts          SorteioPost[]
+  regras         Json          @default("{}")
+  qtdGanhadores  Int           @default(1)
+  ganhadores     Ganhador[]
+  hashSeed       String?
+  hashResultado  String?
+  seedRevelado   String?
+  dataRealizacao DateTime?
+  criadoEm       DateTime      @default(now())
+  atualizadoEm   DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+enum StatusSorteio {
+  RASCUNHO
+  COLETANDO
+  PRONTO
+  REALIZADO
+  CANCELADO
+}
+
+model SorteioPost {
+  id          String       @id @default(cuid())
+  sorteioId   String
+  sorteio     Sorteio      @relation(fields: [sorteioId], references: [id], onDelete: Cascade)
+  igMediaId   String
+  permalink   String
+  caption     String?      @db.Text
+  mediaUrl    String?
+  mediaType   String?
+  comentarios Comentario[]
+  syncStatus  SyncStatus   @default(PENDENTE)
+  lastSyncAt  DateTime?
+  totalComentarios Int     @default(0)
+
+  @@index([sorteioId])
+  @@unique([sorteioId, igMediaId])
+}
+
+enum SyncStatus {
+  PENDENTE
+  SINCRONIZANDO
+  COMPLETO
+  ERRO
+}
+
+model Comentario {
+  id              String      @id @default(cuid())
+  sorteioPostId   String
+  sorteioPost     SorteioPost @relation(fields: [sorteioPostId], references: [id], onDelete: Cascade)
+  igCommentId     String      @unique
+  username        String
+  texto           String      @db.Text
+  timestamp       DateTime
+  isElegivel      Boolean     @default(true)
+  motivoInelegivel String?
+  fraudeScore     Float?
+  tagCount        Int         @default(0)
+  hasHashtag      Boolean     @default(false)
+
+  @@index([sorteioPostId])
+  @@index([username])
+  @@index([isElegivel])
+}
+
+model Ganhador {
+  id           String  @id @default(cuid())
+  sorteioId    String
+  sorteio      Sorteio @relation(fields: [sorteioId], references: [id], onDelete: Cascade)
+  username     String
+  comentarioId String?
+  posicao      Int
+  verificado   Boolean @default(false)
+  notificado   Boolean @default(false)
+
+  @@index([sorteioId])
+}
+
+// ─── Pagamentos ──────────────────────────────────────────────
+
+model Pagamento {
+  id                String         @id @default(cuid())
+  userId            String
+  asaasPaymentId    String         @unique
+  asaasSubscriptionId String?
+  valor             Float
+  status            StatusPagamento @default(PENDENTE)
+  formaPagamento    String?
+  criadoEm          DateTime       @default(now())
+  atualizadoEm      DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([asaasPaymentId])
+}
+
+enum StatusPagamento {
+  PENDENTE
+  CONFIRMADO
+  RECEBIDO
+  VENCIDO
+  REEMBOLSADO
+  CANCELADO
+}
