@@ -4,11 +4,9 @@ interface Comment {
   id: string;
   username: string;
   texto: string;
-  timestamp: string;
 }
 
 function extractShortcode(url: string): string | null {
-  // Matches: /p/SHORTCODE/, /reel/SHORTCODE/, /tv/SHORTCODE/
   const match = url.match(
     /instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/
   );
@@ -17,8 +15,21 @@ function extractShortcode(url: string): string | null {
 
 export async function POST(req: Request) {
   try {
-    const { url } = await req.json();
+    const body = await req.json();
 
+    // Mode 1: Paste mode - user pasted comments text
+    if (body.pastedText) {
+      const comments = parseComments(body.pastedText);
+      return NextResponse.json({
+        success: true,
+        comments,
+        total: comments.length,
+        source: "paste",
+      });
+    }
+
+    // Mode 2: URL mode - try to scrape from Instagram
+    const { url } = body;
     if (!url) {
       return NextResponse.json({ error: "URL é obrigatória" }, { status: 400 });
     }
@@ -31,13 +42,28 @@ export async function POST(req: Request) {
       );
     }
 
-    const comments = await fetchComments(shortcode);
+    // Try to fetch comments from embed page
+    try {
+      const comments = await fetchFromEmbed(shortcode);
+      if (comments.length > 0) {
+        return NextResponse.json({
+          success: true,
+          comments,
+          total: comments.length,
+          source: "api",
+        });
+      }
+    } catch (e) {
+      console.log("[comments] Embed scraping failed:", (e as Error).message);
+    }
 
+    // If scraping fails, return special response asking for paste
     return NextResponse.json({
-      success: true,
+      success: false,
+      needsPaste: true,
       shortcode,
-      comments,
-      total: comments.length,
+      error:
+        "Não foi possível carregar automaticamente. Use a opção de colar comentários.",
     });
   } catch (error: any) {
     console.error("[comments] Error:", error);
@@ -48,202 +74,129 @@ export async function POST(req: Request) {
   }
 }
 
-async function fetchComments(shortcode: string): Promise<Comment[]> {
-  const allComments: Comment[] = [];
+function parseComments(text: string): Comment[] {
+  const comments: Comment[] = [];
+  const seen = new Set<string>();
 
-  // Approach 1: Instagram GraphQL (public, no auth needed)
-  try {
-    const comments = await fetchViaGraphQL(shortcode);
-    if (comments.length > 0) return comments;
-  } catch (e) {
-    console.log("[comments] GraphQL approach failed:", (e as Error).message);
+  // Split by newlines
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  let currentUsername = "";
+  let currentText = "";
+  let id = 0;
+
+  for (const line of lines) {
+    // Pattern 1: "@username comment text" or "username comment text"
+    const atMatch = line.match(/^@?([a-zA-Z0-9._]+)\s+(.*)/);
+
+    // Pattern 2: Just a username (next line is comment)
+    const usernameOnly = line.match(/^@?([a-zA-Z0-9._]{2,30})$/);
+
+    // Pattern 3: "username\ncomment" pattern (Instagram copy-paste format)
+    // Instagram format: username\ntimestamp\ncomment text
+    const isTimestamp =
+      /^\d+\s*(sem|h|min|d|s|w|m)\b/i.test(line) ||
+      /^\d+\s*(semana|hora|minuto|dia|segundo)/i.test(line) ||
+      /^(Responder|Reply|Ver tradução|See translation|Curtir|Like)/i.test(line) ||
+      /^\d+ (curtida|like|resposta|repl)/i.test(line);
+
+    if (isTimestamp) {
+      continue; // Skip timestamps and action text
+    }
+
+    if (atMatch) {
+      // Save previous comment if exists
+      if (currentUsername && currentText) {
+        const key = currentUsername.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          comments.push({
+            id: String(++id),
+            username: currentUsername,
+            texto: currentText,
+          });
+        }
+      }
+      currentUsername = atMatch[1];
+      currentText = atMatch[2] || "";
+    } else if (usernameOnly) {
+      // Save previous
+      if (currentUsername && currentText) {
+        const key = currentUsername.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          comments.push({
+            id: String(++id),
+            username: currentUsername,
+            texto: currentText,
+          });
+        }
+      }
+      currentUsername = usernameOnly[1];
+      currentText = "";
+    } else if (currentUsername && !currentText) {
+      // This is probably the comment text for the current username
+      currentText = line;
+    } else if (currentUsername && currentText) {
+      // Continuation of comment
+      currentText += " " + line;
+    }
   }
 
-  // Approach 2: Instagram embed page scraping
-  try {
-    const comments = await fetchViaEmbed(shortcode);
-    if (comments.length > 0) return comments;
-  } catch (e) {
-    console.log("[comments] Embed approach failed:", (e as Error).message);
+  // Don't forget the last comment
+  if (currentUsername && currentText) {
+    const key = currentUsername.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      comments.push({
+        id: String(++id),
+        username: currentUsername,
+        texto: currentText,
+      });
+    }
   }
 
-  // Approach 3: Instagram __a=1 endpoint
-  try {
-    const comments = await fetchViaDirectAPI(shortcode);
-    if (comments.length > 0) return comments;
-  } catch (e) {
-    console.log("[comments] Direct API approach failed:", (e as Error).message);
-  }
-
-  if (allComments.length === 0) {
-    throw new Error(
-      "Não foi possível carregar os comentários. O post pode ser privado ou o Instagram bloqueou a requisição. Tente novamente em alguns minutos."
-    );
-  }
-
-  return allComments;
+  return comments;
 }
 
-async function fetchViaGraphQL(shortcode: string): Promise<Comment[]> {
-  // First, get the media ID from the shortcode
-  const infoRes = await fetch(
-    `https://www.instagram.com/api/v1/oembed/?url=https://www.instagram.com/p/${shortcode}/`,
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "application/json",
-      },
-    }
-  );
-
-  if (!infoRes.ok) {
-    throw new Error("oEmbed request failed");
-  }
-
-  const info = await infoRes.json();
-  const mediaId = info.media_id;
-
-  if (!mediaId) {
-    throw new Error("Could not extract media_id from oEmbed");
-  }
-
-  // Use the GraphQL query hash for comments
-  const queryHash = "bc3296d44b68399f14cab3b1d1a9326f";
-  const variables = JSON.stringify({
-    shortcode,
-    first: 50,
-  });
-
-  const gqlRes = await fetch(
-    `https://www.instagram.com/graphql/query/?query_hash=${queryHash}&variables=${encodeURIComponent(variables)}`,
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "*/*",
-        "X-Requested-With": "XMLHttpRequest",
-        Referer: `https://www.instagram.com/p/${shortcode}/`,
-      },
-    }
-  );
-
-  if (!gqlRes.ok) throw new Error("GraphQL request failed");
-
-  const gqlData = await gqlRes.json();
-  const edges =
-    gqlData?.data?.shortcode_media?.edge_media_to_parent_comment?.edges || [];
-
-  return edges.map((edge: any, i: number) => ({
-    id: edge.node.id || String(i),
-    username: edge.node.owner?.username || "unknown",
-    texto: edge.node.text || "",
-    timestamp: edge.node.created_at
-      ? new Date(edge.node.created_at * 1000).toISOString()
-      : new Date().toISOString(),
-  }));
-}
-
-async function fetchViaEmbed(shortcode: string): Promise<Comment[]> {
+async function fetchFromEmbed(shortcode: string): Promise<Comment[]> {
+  // Try the embed/captioned endpoint which sometimes includes comment previews
   const res = await fetch(
     `https://www.instagram.com/p/${shortcode}/embed/captioned/`,
     {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
       },
     }
   );
 
-  if (!res.ok) throw new Error("Embed request failed");
+  if (!res.ok) throw new Error(`Embed returned ${res.status}`);
 
   const html = await res.text();
-
-  // Extract comments from embed HTML
   const comments: Comment[] = [];
-
-  // Pattern: data-testid="comment" with username and text
-  const commentPattern =
-    /<a[^>]*class="[^"]*CaptionUsername[^"]*"[^>]*>([^<]+)<\/a>\s*<span[^>]*>([^<]*(?:<[^>]+>[^<]*)*)<\/span>/gi;
-
-  let match;
   let id = 0;
-  while ((match = commentPattern.exec(html)) !== null) {
-    comments.push({
-      id: String(++id),
-      username: match[1].replace("@", "").trim(),
-      texto: match[2].replace(/<[^>]+>/g, "").trim(),
-      timestamp: new Date().toISOString(),
-    });
-  }
 
-  // Also try extracting from JSON embedded in the page
-  const jsonMatch = html.match(
-    /window\.__additionalDataLoaded\('extra',\s*({.+?})\);/
+  // Look for username+comment pairs in the embed HTML
+  // Pattern: class="...Username..." followed by comment text
+  const pairs = html.matchAll(
+    /class="[^"]*[Uu]sername[^"]*"[^>]*>([^<]+)<\/a>\s*(?:<[^>]*>)*\s*([^<]+)/g
   );
-  if (jsonMatch) {
-    try {
-      const data = JSON.parse(jsonMatch[1]);
-      const edges =
-        data?.shortcode_media?.edge_media_to_parent_comment?.edges || [];
-      for (const edge of edges) {
-        comments.push({
-          id: edge.node.id || String(++id),
-          username: edge.node.owner?.username || "unknown",
-          texto: edge.node.text || "",
-          timestamp: edge.node.created_at
-            ? new Date(edge.node.created_at * 1000).toISOString()
-            : new Date().toISOString(),
-        });
-      }
-    } catch {}
+
+  for (const match of pairs) {
+    const username = match[1].replace("@", "").trim();
+    const text = match[2].trim();
+    if (username && text && text.length > 1) {
+      comments.push({
+        id: String(++id),
+        username,
+        texto: text,
+      });
+    }
   }
 
   return comments;
-}
-
-async function fetchViaDirectAPI(shortcode: string): Promise<Comment[]> {
-  const res = await fetch(
-    `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`,
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "application/json",
-        "X-IG-App-ID": "936619743392459",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-    }
-  );
-
-  if (!res.ok) throw new Error("Direct API request failed");
-
-  const data = await res.json();
-  const edges =
-    data?.graphql?.shortcode_media?.edge_media_to_parent_comment?.edges ||
-    data?.items?.[0]?.comment_count
-      ? []
-      : [];
-
-  // Try different data structures
-  if (data?.items?.[0]?.comments) {
-    return data.items[0].comments.map((c: any, i: number) => ({
-      id: c.pk || String(i),
-      username: c.user?.username || "unknown",
-      texto: c.text || "",
-      timestamp: c.created_at
-        ? new Date(c.created_at * 1000).toISOString()
-        : new Date().toISOString(),
-    }));
-  }
-
-  return edges.map((edge: any, i: number) => ({
-    id: edge.node?.id || String(i),
-    username: edge.node?.owner?.username || "unknown",
-    texto: edge.node?.text || "",
-    timestamp: edge.node?.created_at
-      ? new Date(edge.node.created_at * 1000).toISOString()
-      : new Date().toISOString(),
-  }));
 }

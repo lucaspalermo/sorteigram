@@ -51,10 +51,14 @@ export default function SortearPage() {
   const [seedRevelado, setSeedRevelado] = useState("");
 
   const [erro, setErro] = useState("");
+  const [modoColar, setModoColar] = useState(false);
+  const [textoColar, setTextoColar] = useState("");
+  const [needsPaste, setNeedsPaste] = useState(false);
 
   const buscarComentarios = useCallback(async () => {
     setCarregando(true);
     setErro("");
+    setNeedsPaste(false);
 
     try {
       const res = await fetch("/api/comments", {
@@ -64,6 +68,13 @@ export default function SortearPage() {
       });
 
       const data = await res.json();
+
+      if (data.needsPaste) {
+        setNeedsPaste(true);
+        setModoColar(true);
+        setCarregando(false);
+        return;
+      }
 
       if (!res.ok || !data.success) {
         setErro(data.error || "Erro ao buscar comentários");
@@ -93,6 +104,39 @@ export default function SortearPage() {
       setCarregando(false);
     }
   }, [url]);
+
+  const processarColados = useCallback(async () => {
+    if (!textoColar.trim()) {
+      setErro("Cole os comentários do Instagram.");
+      return;
+    }
+
+    setCarregando(true);
+    setErro("");
+
+    try {
+      const res = await fetch("/api/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pastedText: textoColar }),
+      });
+
+      const data = await res.json();
+
+      if (data.comments.length === 0) {
+        setErro("Nenhum comentário reconhecido. Tente copiar novamente.");
+        setCarregando(false);
+        return;
+      }
+
+      setParticipantes(data.comments);
+      setCarregando(false);
+      setEtapa("config");
+    } catch {
+      setErro("Erro ao processar. Tente novamente.");
+      setCarregando(false);
+    }
+  }, [textoColar]);
 
   // Aplicar filtros
   const participantesFiltrados = participantes.filter((p) => {
@@ -199,6 +243,33 @@ export default function SortearPage() {
               Cole o link do post e sorteie em segundos. Sem cadastro.
             </p>
 
+            {/* Tabs: URL ou Colar */}
+            <div className="flex gap-2 mb-4 justify-center">
+              <button
+                onClick={() => { setModoColar(false); setNeedsPaste(false); }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  !modoColar
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                <Globe className="w-4 h-4 inline mr-1.5" />
+                Colar link
+              </button>
+              <button
+                onClick={() => setModoColar(true)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  modoColar
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                <Users className="w-4 h-4 inline mr-1.5" />
+                Colar comentários
+              </button>
+            </div>
+
+            {!modoColar ? (
             <div className="bg-white rounded-2xl border-2 border-gray-200 p-2 shadow-lg mb-4">
               <div className="flex gap-2">
                 <div className="flex items-center pl-3">
@@ -229,6 +300,30 @@ export default function SortearPage() {
             <p className="text-xs text-gray-400">
               Funciona com Instagram, YouTube, TikTok, Twitter/X e Facebook
             </p>
+            ) : (
+            <div className="text-left">
+              <div className="bg-white rounded-2xl border-2 border-gray-200 p-4 shadow-lg mb-4">
+                <textarea
+                  value={textoColar}
+                  onChange={(e) => setTextoColar(e.target.value)}
+                  placeholder={"Como colar:\n1. Abra o post no Instagram\n2. Selecione todos os comentários (Ctrl+A)\n3. Copie (Ctrl+C)\n4. Cole aqui (Ctrl+V)\n\nFormato aceito:\nusuario1\ncomentário do usuario1\nusuario2\ncomentário do usuario2"}
+                  className="w-full h-48 bg-transparent outline-none text-sm text-gray-700 placeholder:text-gray-400 resize-none"
+                />
+              </div>
+              <button
+                onClick={processarColados}
+                disabled={!textoColar.trim() || carregando}
+                className="w-full bg-purple-600 text-white py-3 rounded-xl text-sm font-bold hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {carregando ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Processar comentários
+              </button>
+            </div>
+            )}
 
             {erro && (
               <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
@@ -236,11 +331,18 @@ export default function SortearPage() {
               </div>
             )}
 
+            {needsPaste && (
+              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
+                <p className="font-medium mb-1">Carregamento automático indisponível</p>
+                <p>Use a aba "Colar comentários" para colar os comentários manualmente do Instagram.</p>
+              </div>
+            )}
+
             {carregando && (
               <div className="mt-8 bg-purple-50 rounded-2xl p-6 animate-pulse">
                 <Loader2 className="w-6 h-6 animate-spin text-purple-600 mx-auto mb-3" />
                 <p className="text-sm text-purple-700 font-medium">
-                  Buscando comentarios...
+                  {modoColar ? "Processando comentários..." : "Buscando comentarios..."}
                 </p>
                 <p className="text-xs text-purple-500 mt-1">
                   Isso pode levar alguns segundos para posts grandes
