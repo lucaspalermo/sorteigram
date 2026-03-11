@@ -9,12 +9,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Facebook({
       clientId: process.env.FACEBOOK_CLIENT_ID!,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          scope:
-            "instagram_basic,pages_show_list,pages_read_engagement,instagram_manage_comments",
-        },
-      },
     }),
   ],
   callbacks: {
