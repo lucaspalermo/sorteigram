@@ -135,80 +135,36 @@ function isMetaLine(line: string): boolean {
 function parseInstagramCopyFormat(lines: string[]): Comment[] {
   const comments: Comment[] = [];
   let id = 0;
-  let currentLines: string[] = [];
-  let foundFirstComment = false;
 
-  // Find where comments start: the first "curtidasResponder" line marks end of first comment
-  const firstMetaIdx = lines.findIndex((l) =>
-    /\d+\s*curtidas?Responder$/i.test(l) || /\d+\s*likes?Reply$/i.test(l)
-  );
+  // Strategy: find all "curtidasResponder" markers.
+  // Walk backwards from each marker to collect the comment text.
+  // The text between two consecutive markers (minus meta lines) is one comment.
 
-  if (firstMetaIdx < 0) return [];
-
-  // The post caption is the big block of text before the first comment.
-  // We need to figure out where the caption ends and the first comment starts.
-  // Strategy: the caption is usually a long multi-line text.
-  // Comments are typically 1-3 lines before each "curtidasResponder" line.
-  // We'll walk through and split by meta lines.
-
-  // First, skip everything that looks like profile header (before the caption)
-  let startIdx = 0;
+  const metaIndices: number[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (isMetaLine(line)) continue;
-    // Check if this could be profile name or username
-    if (i < 10 && (looksLikeUsername(line) || /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(line))) continue;
-    startIdx = i;
-    break;
+    if (/\d+\s*curtidas?Responder$/i.test(lines[i]) || /\d+\s*likes?Reply$/i.test(lines[i])) {
+      metaIndices.push(i);
+    }
   }
 
-  // Now find the caption: it's the text between header and first meta line
-  // We'll skip the caption by starting from the first comment
-  // The first comment is the text block right before the first "curtidasResponder"
-  // But the caption text is ALSO before it.
-  //
-  // Better strategy: split ALL text by "curtidasResponder" markers.
-  // First chunk = caption (skip it), rest = comments.
+  if (metaIndices.length === 0) return [];
 
-  let chunkCount = 0;
-  for (let i = startIdx; i < lines.length; i++) {
-    const line = lines[i];
-    const isMeta = /\d+\s*curtidas?Responder$/i.test(line) || /\d+\s*likes?Reply$/i.test(line);
+  // For each meta marker, collect non-meta lines between it and the previous marker
+  for (let m = 0; m < metaIndices.length; m++) {
+    const endIdx = metaIndices[m]; // the "curtidasResponder" line
+    const startIdx = m === 0 ? 0 : metaIndices[m - 1] + 1;
 
-    if (isMeta) {
-      chunkCount++;
-      if (chunkCount === 1) {
-        // First chunk is the caption - skip it
-        currentLines = [];
-        continue;
-      }
-      // This ends a comment
-      if (currentLines.length > 0) {
-        const texto = currentLines.join(" ").trim();
-        if (texto.length > 0) {
-          comments.push({
-            id: String(++id),
-            username: `participante_${id}`,
-            texto,
-          });
-        }
-        currentLines = [];
-      }
-      continue;
+    // Collect comment lines (walking backwards from the marker)
+    // Comments are usually 1-3 lines right before the marker
+    const commentLines: string[] = [];
+    for (let i = endIdx - 1; i >= startIdx; i--) {
+      const line = lines[i];
+      if (isMetaLine(line)) break; // hit another meta line, stop
+      commentLines.unshift(line);
     }
 
-    if (isMetaLine(line)) continue;
-
-    // Skip lines that look like they are the post author username (appears right after caption)
-    if (chunkCount < 1) continue;
-
-    currentLines.push(line);
-  }
-
-  // Last comment if any
-  if (currentLines.length > 0) {
-    const texto = currentLines.join(" ").trim();
-    if (texto.length > 1 && !/^Adicione um comentário/i.test(texto)) {
+    const texto = commentLines.join(" ").trim();
+    if (texto.length > 0 && !/^Adicione um coment/i.test(texto)) {
       comments.push({
         id: String(++id),
         username: `participante_${id}`,
