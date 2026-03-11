@@ -3,7 +3,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
-  Globe,
   Sparkles,
   Trophy,
   Filter,
@@ -20,7 +19,8 @@ import {
   PartyPopper,
   ChevronDown,
   ChevronUp,
-  X,
+  Copy,
+  Terminal,
 } from "lucide-react";
 
 interface Participante {
@@ -33,7 +33,6 @@ type Etapa = "input" | "config" | "sorteando" | "resultado";
 
 export default function SortearPage() {
   const [etapa, setEtapa] = useState<Etapa>("input");
-  const [url, setUrl] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [participantes, setParticipantes] = useState<Participante[]>([]);
   const [ganhadores, setGanhadores] = useState<Participante[]>([]);
@@ -51,59 +50,16 @@ export default function SortearPage() {
   const [seedRevelado, setSeedRevelado] = useState("");
 
   const [erro, setErro] = useState("");
-  const [modoColar, setModoColar] = useState(false);
   const [textoColar, setTextoColar] = useState("");
-  const [needsPaste, setNeedsPaste] = useState(false);
+  const [scriptCopiado, setScriptCopiado] = useState(false);
 
-  const buscarComentarios = useCallback(async () => {
-    setCarregando(true);
-    setErro("");
-    setNeedsPaste(false);
+  const scriptExtrator = `(async()=>{const s=document.querySelectorAll('[role="button"]');for(const b of s){if(b.textContent&&/ver.*coment|view.*comment|mais coment|more comment/i.test(b.textContent))b.click()}await new Promise(r=>setTimeout(r,2000));let t=0;while(t<50){const m=document.querySelectorAll('[role="button"]');let f=false;for(const b of m){if(b.textContent&&/ver.*coment|view.*comment|mais coment|more comment|carregar|load more/i.test(b.textContent)){b.click();f=true}}if(!f)break;await new Promise(r=>setTimeout(r,1500));t++}const cs=document.querySelectorAll('ul ul li, div[role="dialog"] ul li');const r=[];const seen=new Set();cs.forEach(c=>{const u=c.querySelector('a[href*="/"] span, a[role="link"] span, h3 a, a.x1i10hfl');const t=c.querySelector('span[dir="auto"], div[dir="auto"] span');if(u&&t){const un=u.textContent.trim().replace('@','');const tx=t.textContent.trim();if(un&&tx&&tx.length>0&&!seen.has(un+'|'+tx)){seen.add(un+'|'+tx);r.push('@'+un+' '+tx)}}});const txt=r.join('\\n');if(r.length>0){await navigator.clipboard.writeText(txt);alert('Pronto! '+r.length+' comentarios copiados. Cole no SorteiGram (Ctrl+V).')}else{alert('Nenhum comentario encontrado. Tente abrir o post e expandir os comentarios antes.')}})();`;
 
-    try {
-      const res = await fetch("/api/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-
-      const data = await res.json();
-
-      if (data.needsPaste) {
-        setNeedsPaste(true);
-        setModoColar(true);
-        setCarregando(false);
-        return;
-      }
-
-      if (!res.ok || !data.success) {
-        setErro(data.error || "Erro ao buscar comentários");
-        setCarregando(false);
-        return;
-      }
-
-      if (data.comments.length === 0) {
-        setErro("Nenhum comentário encontrado neste post.");
-        setCarregando(false);
-        return;
-      }
-
-      const comentarios: Participante[] = data.comments.map(
-        (c: any, i: number) => ({
-          id: c.id || String(i + 1),
-          username: c.username,
-          texto: c.texto,
-        })
-      );
-
-      setParticipantes(comentarios);
-      setCarregando(false);
-      setEtapa("config");
-    } catch {
-      setErro("Erro de conexão. Tente novamente.");
-      setCarregando(false);
-    }
-  }, [url]);
+  const copiarScript = () => {
+    navigator.clipboard.writeText(scriptExtrator);
+    setScriptCopiado(true);
+    setTimeout(() => setScriptCopiado(false), 3000);
+  };
 
   const processarColados = useCallback(async () => {
     if (!textoColar.trim()) {
@@ -240,69 +196,46 @@ export default function SortearPage() {
               Sorteie agora
             </h1>
             <p className="text-gray-500 mb-8">
-              Cole o link do post e sorteie em segundos. Sem cadastro.
+              Extraia os comentários do Instagram e sorteie em segundos.
             </p>
 
-            {/* Tabs: URL ou Colar */}
-            <div className="flex gap-2 mb-4 justify-center">
-              <button
-                onClick={() => { setModoColar(false); setNeedsPaste(false); }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  !modoColar
-                    ? "bg-purple-600 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                <Globe className="w-4 h-4 inline mr-1.5" />
-                Colar link
-              </button>
-              <button
-                onClick={() => setModoColar(true)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  modoColar
-                    ? "bg-purple-600 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                <Users className="w-4 h-4 inline mr-1.5" />
-                Colar comentários
-              </button>
+            {/* Passo 1: Instruções para extrair comentários */}
+            <div className="text-left bg-white rounded-2xl border-2 border-gray-200 p-5 shadow-lg mb-4">
+              <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-purple-600" />
+                Como extrair os comentários
+              </h3>
+              <ol className="text-sm text-gray-600 space-y-2 mb-4 list-decimal list-inside">
+                <li>Abra o post do Instagram no <strong>navegador</strong> (Chrome/Edge)</li>
+                <li>Pressione <strong>F12</strong> para abrir o Console do navegador</li>
+                <li>Clique na aba <strong>Console</strong></li>
+                <li>
+                  Copie o script abaixo e cole no console:
+                  <div className="mt-2 relative">
+                    <pre className="bg-gray-900 text-green-400 text-xs p-3 rounded-lg overflow-x-auto max-h-20 scrollbar-thin">
+                      {scriptExtrator.substring(0, 120) + "..."}
+                    </pre>
+                    <button
+                      onClick={copiarScript}
+                      className="absolute top-2 right-2 bg-purple-600 text-white px-3 py-1 rounded-md text-xs font-medium hover:bg-purple-700 flex items-center gap-1"
+                    >
+                      <Copy className="w-3 h-3" />
+                      {scriptCopiado ? "Copiado!" : "Copiar script"}
+                    </button>
+                  </div>
+                </li>
+                <li>Pressione <strong>Enter</strong> — o script vai carregar todos os comentários automaticamente</li>
+                <li>Os comentários serão copiados automaticamente. Cole aqui embaixo com <strong>Ctrl+V</strong></li>
+              </ol>
             </div>
 
-            {!modoColar ? (
-            <div className="bg-white rounded-2xl border-2 border-gray-200 p-2 shadow-lg mb-4">
-              <div className="flex gap-2">
-                <div className="flex items-center pl-3">
-                  <Globe className="w-5 h-5 text-gray-400" />
-                </div>
-                <input
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://www.instagram.com/p/..."
-                  className="flex-1 bg-transparent outline-none text-sm py-3 text-gray-700 placeholder:text-gray-400"
-                />
-                <button
-                  onClick={buscarComentarios}
-                  disabled={!url.trim() || carregando}
-                  className="bg-purple-600 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shrink-0"
-                >
-                  {carregando ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Play className="w-4 h-4" />
-                  )}
-                  Buscar
-                </button>
-              </div>
-            </div>
-            ) : (
+            {/* Passo 2: Colar comentários */}
             <div className="text-left">
               <div className="bg-white rounded-2xl border-2 border-gray-200 p-4 shadow-lg mb-4">
                 <textarea
                   value={textoColar}
                   onChange={(e) => setTextoColar(e.target.value)}
-                  placeholder={"Cole os comentários copiados do Instagram aqui.\n\nComo copiar:\n1. Abra o post no Instagram (navegador)\n2. Selecione os comentários com o mouse\n3. Copie (Ctrl+C) e cole aqui (Ctrl+V)\n\nO sistema aceita o formato do Instagram automaticamente.\nCada comentário será um participante do sorteio."}
+                  placeholder={"Cole os comentários aqui (Ctrl+V)...\n\nFormato esperado (gerado pelo script):\n@usuario1 comentário do usuario1\n@usuario2 comentário do usuario2\n@usuario3 comentário do usuario3"}
                   className="w-full h-48 bg-transparent outline-none text-sm text-gray-700 placeholder:text-gray-400 resize-none"
                 />
               </div>
@@ -319,7 +252,6 @@ export default function SortearPage() {
                 Processar comentários
               </button>
             </div>
-            )}
 
             {erro && (
               <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
@@ -327,18 +259,11 @@ export default function SortearPage() {
               </div>
             )}
 
-            {needsPaste && (
-              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
-                <p className="font-medium mb-1">Carregamento automático indisponível</p>
-                <p>Use a aba "Colar comentários" para colar os comentários manualmente do Instagram.</p>
-              </div>
-            )}
-
             {carregando && (
               <div className="mt-8 bg-purple-50 rounded-2xl p-6 animate-pulse">
                 <Loader2 className="w-6 h-6 animate-spin text-purple-600 mx-auto mb-3" />
                 <p className="text-sm text-purple-700 font-medium">
-                  {modoColar ? "Processando comentários..." : "Buscando comentarios..."}
+                  Processando comentários...
                 </p>
                 <p className="text-xs text-purple-500 mt-1">
                   Isso pode levar alguns segundos para posts grandes
