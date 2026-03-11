@@ -302,7 +302,7 @@ export default function SortearPage() {
                 <textarea
                   value={textoColar}
                   onChange={(e) => setTextoColar(e.target.value)}
-                  placeholder={"Como colar:\n1. Abra o post no Instagram\n2. Selecione todos os comentários (Ctrl+A)\n3. Copie (Ctrl+C)\n4. Cole aqui (Ctrl+V)\n\nFormato aceito:\nusuario1\ncomentário do usuario1\nusuario2\ncomentário do usuario2"}
+                  placeholder={"Cole os comentários copiados do Instagram aqui.\n\nComo copiar:\n1. Abra o post no Instagram (navegador)\n2. Selecione os comentários com o mouse\n3. Copie (Ctrl+C) e cole aqui (Ctrl+V)\n\nO sistema aceita o formato do Instagram automaticamente.\nCada comentário será um participante do sorteio."}
                   className="w-full h-48 bg-transparent outline-none text-sm text-gray-700 placeholder:text-gray-400 resize-none"
                 />
               </div>

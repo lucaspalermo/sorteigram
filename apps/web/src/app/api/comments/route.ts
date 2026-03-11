@@ -87,17 +87,147 @@ function looksLikeUsername(s: string): boolean {
 }
 
 function parseComments(text: string): Comment[] {
-  const comments: Comment[] = [];
-  const seen = new Set<string>();
-
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
+  // Detect format: Instagram copy-paste with "AgoraXX curtidasResponder" pattern
+  const hasInstagramMeta = lines.some((l) =>
+    /curtidas?Responder$/i.test(l) || /likes?Reply$/i.test(l)
+  );
+
+  if (hasInstagramMeta) {
+    return parseInstagramCopyFormat(lines);
+  }
+
+  // Fallback: username + comment format
+  return parseUsernameCommentFormat(lines);
+}
+
+function isMetaLine(line: string): boolean {
+  return (
+    // "Agora584 curtidasResponder" or "1h24 curtidasResponder" or "2 sem12 curtidasResponder"
+    /\d+\s*curtidas?Responder$/i.test(line) ||
+    /\d+\s*likes?Reply$/i.test(line) ||
+    // Profile header info
+    /^\d[\d.,]*\s*posts?$/i.test(line) ||
+    /^\d[\d.,]*\s*(mi\s+)?seguidores$/i.test(line) ||
+    /^\d[\d.,]*\s*seguindo$/i.test(line) ||
+    // UI elements
+    /^(Responder|Reply|Ver tradução|See translation|Curtir|Like)$/i.test(line) ||
+    /^Editado/i.test(line) ||
+    /^Adicione um comentário/i.test(line) ||
+    /^Foto do perfil de/i.test(line) ||
+    /^Seguido\(a\) por/i.test(line) ||
+    /^Áudio original$/i.test(line) ||
+    /^© \d{4}/i.test(line) ||
+    /^Português \(Brasil\)$/i.test(line) ||
+    /^(Meta|Sobre|Blog|Carreiras|Ajuda|API|Privacidade|Termos|Localizações|Instagram Lite|Meta AI|Threads|Meta Verified)$/i.test(line) ||
+    /^Upload de contatos/i.test(line) ||
+    /^(Site de entretenimento|Embaixador:)/i.test(line) ||
+    /^\d+\+?$/i.test(line) ||
+    /^(SAIBA MAIS|Leia a matéria)/i.test(line) ||
+    /^\(Vídeo:/i.test(line) ||
+    // Timestamps alone
+    /^(Agora|Ontem|Hoje)$/i.test(line) ||
+    /^\d+\s*(sem|h|min|d|s|w|m)$/i.test(line)
+  );
+}
+
+function parseInstagramCopyFormat(lines: string[]): Comment[] {
+  const comments: Comment[] = [];
+  let id = 0;
+  let currentLines: string[] = [];
+  let foundFirstComment = false;
+
+  // Find where comments start: the first "curtidasResponder" line marks end of first comment
+  const firstMetaIdx = lines.findIndex((l) =>
+    /\d+\s*curtidas?Responder$/i.test(l) || /\d+\s*likes?Reply$/i.test(l)
+  );
+
+  if (firstMetaIdx < 0) return [];
+
+  // The post caption is the big block of text before the first comment.
+  // We need to figure out where the caption ends and the first comment starts.
+  // Strategy: the caption is usually a long multi-line text.
+  // Comments are typically 1-3 lines before each "curtidasResponder" line.
+  // We'll walk through and split by meta lines.
+
+  // First, skip everything that looks like profile header (before the caption)
+  let startIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (isMetaLine(line)) continue;
+    // Check if this could be profile name or username
+    if (i < 10 && (looksLikeUsername(line) || /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(line))) continue;
+    startIdx = i;
+    break;
+  }
+
+  // Now find the caption: it's the text between header and first meta line
+  // We'll skip the caption by starting from the first comment
+  // The first comment is the text block right before the first "curtidasResponder"
+  // But the caption text is ALSO before it.
+  //
+  // Better strategy: split ALL text by "curtidasResponder" markers.
+  // First chunk = caption (skip it), rest = comments.
+
+  let chunkCount = 0;
+  for (let i = startIdx; i < lines.length; i++) {
+    const line = lines[i];
+    const isMeta = /\d+\s*curtidas?Responder$/i.test(line) || /\d+\s*likes?Reply$/i.test(line);
+
+    if (isMeta) {
+      chunkCount++;
+      if (chunkCount === 1) {
+        // First chunk is the caption - skip it
+        currentLines = [];
+        continue;
+      }
+      // This ends a comment
+      if (currentLines.length > 0) {
+        const texto = currentLines.join(" ").trim();
+        if (texto.length > 0) {
+          comments.push({
+            id: String(++id),
+            username: `participante_${id}`,
+            texto,
+          });
+        }
+        currentLines = [];
+      }
+      continue;
+    }
+
+    if (isMetaLine(line)) continue;
+
+    // Skip lines that look like they are the post author username (appears right after caption)
+    if (chunkCount < 1) continue;
+
+    currentLines.push(line);
+  }
+
+  // Last comment if any
+  if (currentLines.length > 0) {
+    const texto = currentLines.join(" ").trim();
+    if (texto.length > 1 && !/^Adicione um comentário/i.test(texto)) {
+      comments.push({
+        id: String(++id),
+        username: `participante_${id}`,
+        texto,
+      });
+    }
+  }
+
+  return comments;
+}
+
+function parseUsernameCommentFormat(lines: string[]): Comment[] {
+  const comments: Comment[] = [];
+  const seen = new Set<string>();
   let currentUsername = "";
   let currentText = "";
   let id = 0;
 
   for (const line of lines) {
-    // Skip Instagram UI text (timestamps, actions, etc.)
     const isTimestamp =
       /^\d+\s*(sem|h|min|d|s|w|m)\b/i.test(line) ||
       /^\d+\s*(semana|hora|minuto|dia|segundo)/i.test(line) ||
@@ -108,7 +238,6 @@ function parseComments(text: string): Comment[] {
 
     if (isTimestamp) continue;
 
-    // Check if line starts with @username (explicit username)
     const atPrefixed = line.match(/^@([a-zA-Z0-9._]{2,30})\s+(.*)/);
     if (atPrefixed) {
       if (currentUsername && currentText) {
@@ -123,9 +252,8 @@ function parseComments(text: string): Comment[] {
       continue;
     }
 
-    // Check if line is just a username (Instagram copy-paste format)
     const cleanLine = line.replace(/^@/, "");
-    if (looksLikeUsername(line) && line === cleanLine || line.startsWith("@")) {
+    if ((looksLikeUsername(line) && line === cleanLine) || line.startsWith("@")) {
       const uname = cleanLine.match(/^([a-zA-Z0-9._]{2,30})$/);
       if (uname) {
         if (currentUsername && currentText) {
@@ -141,7 +269,6 @@ function parseComments(text: string): Comment[] {
       }
     }
 
-    // It's comment text
     if (currentUsername && !currentText) {
       currentText = line;
     } else if (currentUsername && currentText) {
@@ -149,7 +276,6 @@ function parseComments(text: string): Comment[] {
     }
   }
 
-  // Don't forget the last comment
   if (currentUsername && currentText) {
     const key = currentUsername.toLowerCase();
     if (!seen.has(key)) {
