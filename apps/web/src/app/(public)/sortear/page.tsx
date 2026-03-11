@@ -296,10 +296,6 @@ export default function SortearPage() {
                 </button>
               </div>
             </div>
-
-            <p className="text-xs text-gray-400">
-              Funciona com Instagram, YouTube, TikTok, Twitter/X e Facebook
-            </p>
             ) : (
             <div className="text-left">
               <div className="bg-white rounded-2xl border-2 border-gray-200 p-4 shadow-lg mb-4">
