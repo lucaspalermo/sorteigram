@@ -146,17 +146,6 @@ function parseComments(text: string): Comment[] {
       currentText = line;
     } else if (currentUsername && currentText) {
       currentText += " " + line;
-          });
-        }
-      }
-      currentUsername = usernameOnly[1];
-      currentText = "";
-    } else if (currentUsername && !currentText) {
-      // This is probably the comment text for the current username
-      currentText = line;
-    } else if (currentUsername && currentText) {
-      // Continuation of comment
-      currentText += " " + line;
     }
   }
 
