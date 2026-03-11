@@ -50,33 +50,49 @@ export default function SortearPage() {
   const [hashSeed, setHashSeed] = useState("");
   const [seedRevelado, setSeedRevelado] = useState("");
 
-  // Simular busca de comentários (em produção usaria a API)
+  const [erro, setErro] = useState("");
+
   const buscarComentarios = useCallback(async () => {
     setCarregando(true);
-    // Simulação - em produção chamaria o endpoint real
-    await new Promise((r) => setTimeout(r, 2000));
+    setErro("");
 
-    const nomes = [
-      "maria_silva", "joao_2024", "ana_costa", "pedro_oficial",
-      "juliana_fit", "carlos.dev", "bea_travel", "lucas_gamer",
-      "fernanda.m", "rafael_photo", "camila_art", "bruno_music",
-      "lari_cook", "thiago_run", "nat_style", "diego_surf",
-      "paula_yoga", "andre_tech", "isa_beauty", "leo_skate",
-      "gabi_reads", "marcos_gym", "dani_pets", "edu_cine",
-      "lu_garden", "rick_beats", "carol_dance", "vini_chess",
-      "tati_bake", "hugo_ride",
-    ];
+    try {
+      const res = await fetch("/api/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
 
-    const comentarios: Participante[] = nomes.map((nome, i) => ({
-      id: String(i + 1),
-      username: nome,
-      texto: `Comentário de @${nome} ${i % 3 === 0 ? "@amigo1 @amigo2" : ""} ${i % 4 === 0 ? "#sorteio" : ""}`,
-    }));
+      const data = await res.json();
 
-    setParticipantes(comentarios);
-    setCarregando(false);
-    setEtapa("config");
-  }, []);
+      if (!res.ok || !data.success) {
+        setErro(data.error || "Erro ao buscar comentários");
+        setCarregando(false);
+        return;
+      }
+
+      if (data.comments.length === 0) {
+        setErro("Nenhum comentário encontrado neste post.");
+        setCarregando(false);
+        return;
+      }
+
+      const comentarios: Participante[] = data.comments.map(
+        (c: any, i: number) => ({
+          id: c.id || String(i + 1),
+          username: c.username,
+          texto: c.texto,
+        })
+      );
+
+      setParticipantes(comentarios);
+      setCarregando(false);
+      setEtapa("config");
+    } catch {
+      setErro("Erro de conexão. Tente novamente.");
+      setCarregando(false);
+    }
+  }, [url]);
 
   // Aplicar filtros
   const participantesFiltrados = participantes.filter((p) => {
@@ -213,6 +229,12 @@ export default function SortearPage() {
             <p className="text-xs text-gray-400">
               Funciona com Instagram, YouTube, TikTok, Twitter/X e Facebook
             </p>
+
+            {erro && (
+              <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+                {erro}
+              </div>
+            )}
 
             {carregando && (
               <div className="mt-8 bg-purple-50 rounded-2xl p-6 animate-pulse">
