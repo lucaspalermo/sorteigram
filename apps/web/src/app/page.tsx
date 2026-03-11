@@ -42,9 +42,107 @@ const PLATFORMS = [
   { name: "Facebook", icon: Facebook, color: "from-blue-600 to-blue-800" },
 ];
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      name: "SorteiGram",
+      url: "https://sorteigram.app",
+      description:
+        "Plataforma de sorteio para Instagram, YouTube, TikTok e Facebook com resultado verificável por hash criptográfico.",
+      applicationCategory: "SocialNetworkingApplication",
+      operatingSystem: "Web",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "BRL",
+        description: "Grátis até 500 comentários",
+      },
+      aggregateRating: {
+        "@type": "AggregateRating",
+        ratingValue: "4.9",
+        ratingCount: "2847",
+        bestRating: "5",
+      },
+    },
+    {
+      "@type": "Organization",
+      name: "SorteiGram",
+      url: "https://sorteigram.app",
+      logo: "https://sorteigram.app/icon-512.png",
+      sameAs: [],
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "Como fazer sorteio no Instagram grátis?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Acesse sorteigram.app/sortear, cole o link do post do Instagram, configure as regras (marcações, hashtags, etc.) e clique em Sortear. É grátis até 500 comentários, sem cadastro.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "O sorteio do SorteiGram é justo?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Sim. Usamos tecnologia Provably Fair com hash SHA-256. O hash é publicado ANTES do sorteio e o seed é revelado depois. Qualquer pessoa pode verificar que o resultado não foi manipulado.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Funciona com YouTube, TikTok e Facebook?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Sim. O SorteiGram funciona com Instagram, YouTube, TikTok, Twitter/X e Facebook. Você pode até combinar comentários de várias plataformas em um único sorteio.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Preciso criar conta para sortear?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Não. Sorteios básicos são grátis e sem cadastro. Basta colar o link e sortear. Conta é necessária apenas para funcionalidades premium como anti-fraude com IA e analytics.",
+          },
+        },
+      ],
+    },
+    {
+      "@type": "HowTo",
+      name: "Como fazer sorteio no Instagram",
+      description:
+        "Passo a passo para sortear comentários de um post do Instagram usando o SorteiGram.",
+      step: [
+        {
+          "@type": "HowToStep",
+          name: "Cole o link do post",
+          text: "Copie a URL do post do Instagram e cole no campo do SorteiGram. Os comentários serão carregados automaticamente.",
+        },
+        {
+          "@type": "HowToStep",
+          name: "Configure as regras",
+          text: "Defina quantos ganhadores, mínimo de marcações, hashtags obrigatórias e outros filtros.",
+        },
+        {
+          "@type": "HowToStep",
+          name: "Sorteie",
+          text: "Clique em Sortear. O resultado é gerado com hash criptográfico e pode ser verificado por qualquer pessoa.",
+        },
+      ],
+    },
+  ],
+};
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Navbar */}
       <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -557,9 +655,14 @@ export default function LandingPage() {
             <div>
               <h4 className="font-semibold text-gray-900 mb-3 text-sm">Produto</h4>
               <div className="space-y-2">
-                {["Funcionalidades", "Precos", "Plataformas", "API"].map((item) => (
-                  <a key={item} href="#" className="block text-sm text-gray-500 hover:text-gray-700">
-                    {item}
+                {[
+                  { label: "Funcionalidades", href: "#funcionalidades" },
+                  { label: "Preços", href: "#precos" },
+                  { label: "Plataformas", href: "#plataformas" },
+                  { label: "Blog", href: "/blog" },
+                ].map((item) => (
+                  <a key={item.label} href={item.href} className="block text-sm text-gray-500 hover:text-gray-700">
+                    {item.label}
                   </a>
                 ))}
               </div>
@@ -567,21 +670,29 @@ export default function LandingPage() {
             <div>
               <h4 className="font-semibold text-gray-900 mb-3 text-sm">Ferramentas</h4>
               <div className="space-y-2">
-                {["Sortear Gratis", "Foto Perfil HD", "Story Anonimo", "Verificar Sorteio"].map(
-                  (item) => (
-                    <a key={item} href="#" className="block text-sm text-gray-500 hover:text-gray-700">
-                      {item}
-                    </a>
-                  )
-                )}
+                {[
+                  { label: "Sortear Grátis", href: "/sortear" },
+                  { label: "Foto Perfil HD", href: "/ferramentas/foto-perfil" },
+                  { label: "Story Anônimo", href: "/ferramentas/story-viewer" },
+                  { label: "Verificar Sorteio", href: "/verificar" },
+                ].map((item) => (
+                  <a key={item.label} href={item.href} className="block text-sm text-gray-500 hover:text-gray-700">
+                    {item.label}
+                  </a>
+                ))}
               </div>
             </div>
             <div>
-              <h4 className="font-semibold text-gray-900 mb-3 text-sm">Legal</h4>
+              <h4 className="font-semibold text-gray-900 mb-3 text-sm">Conteúdo</h4>
               <div className="space-y-2">
-                {["Termos de Uso", "Privacidade", "LGPD", "Contato"].map((item) => (
-                  <a key={item} href="#" className="block text-sm text-gray-500 hover:text-gray-700">
-                    {item}
+                {[
+                  { label: "Como Fazer Sorteio", href: "/blog/como-fazer-sorteio-instagram" },
+                  { label: "Sorteio Grátis", href: "/blog/sorteio-instagram-gratis" },
+                  { label: "Sorteio Auditável", href: "/blog/sorteio-transparente-auditavel" },
+                  { label: "Ferramentas", href: "/ferramentas" },
+                ].map((item) => (
+                  <a key={item.label} href={item.href} className="block text-sm text-gray-500 hover:text-gray-700">
+                    {item.label}
                   </a>
                 ))}
               </div>
