@@ -74,11 +74,22 @@ export async function POST(req: Request) {
   }
 }
 
+function looksLikeUsername(s: string): boolean {
+  // Instagram usernames: 1-30 chars, letters, numbers, periods, underscores
+  // Must contain at least one period, underscore, or number to distinguish from regular words
+  // OR start with @ which is always a username
+  if (s.startsWith("@")) return true;
+  if (s.length > 30 || s.length < 2) return false;
+  if (!/^[a-zA-Z0-9._]+$/.test(s)) return false;
+  // Must have a special char (period, underscore, digit) to be a username
+  // Pure alphabetic words like "Adorei" are not usernames
+  return /[._\d]/.test(s);
+}
+
 function parseComments(text: string): Comment[] {
   const comments: Comment[] = [];
   const seen = new Set<string>();
 
-  // Split by newlines
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
 
   let currentUsername = "";
@@ -86,49 +97,55 @@ function parseComments(text: string): Comment[] {
   let id = 0;
 
   for (const line of lines) {
-    // Pattern 1: "@username comment text" or "username comment text"
-    const atMatch = line.match(/^@?([a-zA-Z0-9._]+)\s+(.*)/);
-
-    // Pattern 2: Just a username (next line is comment)
-    const usernameOnly = line.match(/^@?([a-zA-Z0-9._]{2,30})$/);
-
-    // Pattern 3: "username\ncomment" pattern (Instagram copy-paste format)
-    // Instagram format: username\ntimestamp\ncomment text
+    // Skip Instagram UI text (timestamps, actions, etc.)
     const isTimestamp =
       /^\d+\s*(sem|h|min|d|s|w|m)\b/i.test(line) ||
       /^\d+\s*(semana|hora|minuto|dia|segundo)/i.test(line) ||
       /^(Responder|Reply|Ver tradução|See translation|Curtir|Like)/i.test(line) ||
-      /^\d+ (curtida|like|resposta|repl)/i.test(line);
+      /^\d+ (curtida|like|resposta|repl)/i.test(line) ||
+      /^(Ver|See) \d+ (resposta|repl)/i.test(line) ||
+      /^Editado/i.test(line);
 
-    if (isTimestamp) {
-      continue; // Skip timestamps and action text
-    }
+    if (isTimestamp) continue;
 
-    if (atMatch) {
-      // Save previous comment if exists
+    // Check if line starts with @username (explicit username)
+    const atPrefixed = line.match(/^@([a-zA-Z0-9._]{2,30})\s+(.*)/);
+    if (atPrefixed) {
       if (currentUsername && currentText) {
         const key = currentUsername.toLowerCase();
         if (!seen.has(key)) {
           seen.add(key);
-          comments.push({
-            id: String(++id),
-            username: currentUsername,
-            texto: currentText,
-          });
+          comments.push({ id: String(++id), username: currentUsername, texto: currentText });
         }
       }
-      currentUsername = atMatch[1];
-      currentText = atMatch[2] || "";
-    } else if (usernameOnly) {
-      // Save previous
-      if (currentUsername && currentText) {
-        const key = currentUsername.toLowerCase();
-        if (!seen.has(key)) {
-          seen.add(key);
-          comments.push({
-            id: String(++id),
-            username: currentUsername,
-            texto: currentText,
+      currentUsername = atPrefixed[1];
+      currentText = atPrefixed[2] || "";
+      continue;
+    }
+
+    // Check if line is just a username (Instagram copy-paste format)
+    const cleanLine = line.replace(/^@/, "");
+    if (looksLikeUsername(line) && line === cleanLine || line.startsWith("@")) {
+      const uname = cleanLine.match(/^([a-zA-Z0-9._]{2,30})$/);
+      if (uname) {
+        if (currentUsername && currentText) {
+          const key = currentUsername.toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            comments.push({ id: String(++id), username: currentUsername, texto: currentText });
+          }
+        }
+        currentUsername = uname[1];
+        currentText = "";
+        continue;
+      }
+    }
+
+    // It's comment text
+    if (currentUsername && !currentText) {
+      currentText = line;
+    } else if (currentUsername && currentText) {
+      currentText += " " + line;
           });
         }
       }
